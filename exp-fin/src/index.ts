@@ -44,8 +44,24 @@ let timer = setInterval(() => {
     })
 }, SERVER_CONFIG.INTERVAL)
 
-app.use(bodyParser.json());
+const block = (blockTime: number) => {
+    const now = performance.now();
+    while (performance.now() - now < blockTime) { }
+}
+
+app.use(bodyParser.json({
+    // limit size of request body
+    limit: "50mb",
+}));
 app.use(morgan("dev"));
+app.use((_, res, next) => {
+    // simulate processing time
+    const time = Math.random() * 250;
+    console.log(`processing time: ${time}ms`);
+
+    block(time)
+    next();
+})
 
 app.post("/login", (req, res) => {
     const username: string = req.body.username
@@ -104,7 +120,7 @@ const resetTimer = (interval: number) => {
     clearInterval(timer);
     SERVER_CONFIG.INTERVAL = interval;
     timer = setInterval(() => {
-        sensor_data.push({
+        addData({
             timestamp: new Date(),
             value: Math.floor(Math.pow(Math.random(), 2) * 100),
             sensor_id: Math.floor(Math.random() * 100) + "",
@@ -140,6 +156,20 @@ app.get("/data/latest", (_, res) => {
 
 app.get("/data", (_, res) => {
     res.send(sensor_data)
+})
+
+app.post("/calc", (req, res) => {
+    const num = req.body.num;
+    const validNum = typeof num === 'number' ? num : 1;
+
+    const result = Math.pow(validNum, validNum)
+
+    res.send({
+        success: true,
+        data: {
+            result,
+        }
+    });
 })
 
 app.listen(SERVER_CONFIG.PORT, () => {
