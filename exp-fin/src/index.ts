@@ -51,12 +51,12 @@ const block = (blockTime: number) => {
 
 app.use(bodyParser.json({
     // limit size of request body
-    limit: "50mb",
+    limit: "200mb",
 }));
 app.use(morgan("dev"));
 app.use((_, res, next) => {
     // simulate processing time
-    const time = Math.random() * 250;
+    const time = Math.random() * 50;
     console.log(`processing time: ${time}ms`);
 
     block(time)
@@ -162,12 +162,18 @@ app.post("/calc", (req, res) => {
     const num = req.body.num;
     const validNum = typeof num === 'number' ? num : 1;
 
-    const result = Math.pow(validNum, validNum)
+    const big = BigInt(validNum);
+
+    console.log(`num: ${validNum}`)
+
+    const result = big ** big;
+
+    console.log(`result: ${result}`)
 
     res.send({
         success: true,
         data: {
-            result,
+            result: result.toString(),
         }
     });
 })

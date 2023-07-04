@@ -2,6 +2,7 @@ import axios from "axios";
 import { ArgumentParser } from 'argparse';
 import { faker } from '@faker-js/faker';
 import fs from 'fs';
+import { exit } from "process";
 
 const parser = new ArgumentParser({
     description: 'Argparse'
@@ -26,100 +27,107 @@ const URLS = {
     calc: "http://localhost:9999/calc",
 } as const;
 
-const dos_attack = async () => {
-    const NUMBER_OF_REQUESTS = 1000;
-    const promises = await Promise.all(Array(NUMBER_OF_REQUESTS).fill(0).map(async (_, idx) => {
-        const res = await axios.get(
-            label(URLS.latest, "dos-" + idx),
-        );
-        console.log(res.data);
-        return res.data;
-    }))
-    console.log(promises);
+const block = (blockTime: number) => {
+    const now = performance.now();
+    while (performance.now() - now < blockTime) { }
 }
+
 
 const normal = async () => {
-    console.log("normal inside");
-    const res = await axios.get(
-        label(URLS.latest, "normal"),
-    );
-    console.log(res.data);
+    while (1) {
+        try {
+            const res = await axios.get(
+                label(URLS.latest, "normal")
+            )
+            console.log(res.data)
+
+            block(100)
+        } catch (err) {
+            console.error(err)
+            exit(1);
+        }
+    }
 }
 
-const normalLoop = async () => {
-    const time = args.time ? parseInt(args.time) : 1000;
-    setInterval(normal, time)
+const dos = async () => {
+    setInterval(() => {
+        axios.get(
+            label(URLS.latest, "dos")
+        ).catch(err => {
+            console.error(err)
+        })
+    })
 }
 
 const bruteForceLogin = async () => {
-    const NUMBER_OF_REQUESTS = 1000;
-    const promises = await Promise.all(Array(NUMBER_OF_REQUESTS).fill(0).map(async (_, idx) => {
-        const res = await axios.post(
-            label(URLS.login, "brute-force-" + idx),
+    setInterval(() => {
+        axios.post(
+            label(URLS.login, "brute-force"),
             {
                 username: faker.internet.userName(),
-                password: faker.internet.password(),
+                password: faker.internet.password()
             },
-            {
-                headers: {
-                    "Content-Type": "application/json",
-                }
-            }
-        );
-        console.log(res.data);
-        return res.data;
-    }))
-    console.log(promises);
+        ).then(res => {
+            console.log(res.data)
+        })
+        .catch(err => {
+            console.error(err)
+        })
+    })
 }
 
 const bigPayloadAttack = async () => {
-    // create super big javascript object ~15 MB
-    const SIZE_PAYLOAD = 1_000_000;
-    const bigArr = Array(SIZE_PAYLOAD).fill(0).map(() => {
-        const key = faker.lorem.word();
-        const value = faker.string.alphanumeric();
-        return {
-            [key]: value,
+    while (1) {
+        try {
+            const SIZE_PAYLOAD = 1_000_000;
+            const bigArr = Array(SIZE_PAYLOAD).fill(0).map(() => {
+                const key = faker.lorem.word();
+                const value = faker.string.alphanumeric();
+                return {
+                    [key]: value,
+                }
+            });
+
+            const res = await axios.post(
+                label(URLS.login, "big-payload"),
+                bigArr,
+                {
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                },
+            );
+            console.log(res.data);
+        } catch (err) {
+            console.log(err);
+            exit(1);
         }
-    });
-
-    const res = await axios.post(
-        label(URLS.login, "big-payload"),
-        bigArr,
-        {
-            headers: {
-                "Content-Type": "application/json",
-            },
-        },
-    );
-
-    console.log(res.data);
+    }
 }
 
 const bigCompute = async () => {
-    const NUM = 100_000_000;
-    const res = await axios.post(
-        label(URLS.calc, "big-compute"),
-        {
-            num: NUM,
-        },
-        {
-            headers: {
-                "Content-Type": "application/json",
-            },
-        },
-    );
-
-    console.log(res.data);
-}
-
-const safeParseInt = (num: string, radix?: number | undefined) => {
-    try {
-        return parseInt(num, radix);
-    } catch (err) {
-        return null;
+    while (1) {
+        try {
+            const NUM = Math.floor(Math.random() * 1_000_000);
+            const res = await axios.post(
+                label(URLS.calc, "big-compute"),
+                {
+                    num: NUM,
+                },
+                {
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                },
+            );
+            console.log(res.data); 
+        } catch (err) {
+            console.log(err);
+            exit(1);
+        }
     }
 }
+
 
 const safe = <T>(fn: () => T) => {
     return () => {
@@ -132,76 +140,56 @@ const safe = <T>(fn: () => T) => {
     }
 }
 
-const ops = [
-    {
-        name: "normal",
-        handler: normal,
-        probability: 0.9,
-    },
-    {
-        name: "dos",
-        handler: dos_attack,
-        probability: 0.01,
-    },
-    {
-        name: "brute-force",
-        handler: bruteForceLogin,
-        probability: 0.01,
-    },
-    {
-        name: "big-payload",
-        handler: bigPayloadAttack,
-        probability: 0.49,
-    },
-    {
-        name: "big-compute",
-        handler: bigCompute,
-        probability: 0.49,
-    }
-] as const
-
-const byzantine = async () => {
-    // loop and call normal, but occasionally call other attacks
-    const time = args.time && safeParseInt(args.time) || 100;
-
-    setInterval(safe(async () => {
-        const rand = Math.random();
-        let sum = 0;
-        for (const op of ops) {
-            sum += op.probability;
-            if (rand < sum) {
-                console.log("attack type: ", op.name);
-                await op.handler();
-                return
-            }
-        }
-    }), time);
-}
-
-const callback = async () => {
+const callback = () => {
     const type = args.type || "normal";
 
     switch (type) {
         case "normal":
-            return normalLoop();
+            return {
+                name: "normal",
+                handler: safe(normal),
+            }
         case "dos":
-            return dos_attack();
+            return {
+                name: "dos",
+                handler: safe(dos),
+            }
         case "brute-force":
-            return bruteForceLogin();
+            return {
+                name: "brute-force",
+                handler: safe(bruteForceLogin),
+            }
         case "big-payload":
-            return bigPayloadAttack();
+            return {
+                name: "big-payload",
+                handler: safe(bigPayloadAttack),
+            }
         case "big-compute":
-            return bigCompute();
-        case "combine":
-            return byzantine();
+            return {
+                name: "big-compute",
+                handler: safe(bigCompute),
+            }
         default:
-            return normalLoop();
+            return {
+                name: "normal",
+                handler: safe(normal),
+            }
     }
 }
 
 const main = async () => {
     try {
-        callback();
+        const time = args.time ? parseInt(args.time) : null;
+
+        const cl = callback();
+
+        cl.handler();
+
+        if (time) {
+            setTimeout(() => {
+                exit(0);
+            }, time)
+        }
     } catch (err) {
         console.log(err);
     }
